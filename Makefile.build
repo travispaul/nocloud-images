@@ -1,0 +1,139 @@
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+
+#
+# Copyright 2025 Edgecast Cloud LLC.
+#
+
+#
+# Makefile.build - Internal build logic for nocloud-images
+#
+# This file is included by the main Makefile and should not be invoked directly.
+#
+
+SHELL = /bin/bash
+.SHELLFLAGS = -euo pipefail -c
+
+# Include the image-specific Makefile to get URL, VERSION, CHECKSUM
+include $(TOP)/$(IMAGE)/Makefile
+
+# Derive filename from URL
+SRC_FILENAME := $(notdir $(URL))
+SRC_BASENAME := $(basename $(SRC_FILENAME))
+
+# Output directory for this image
+IMAGE_BUILD_DIR := $(BUILD_DIR)/$(IMAGE)
+
+# Downloaded file path
+DOWNLOADED_FILE := $(IMAGE_BUILD_DIR)/$(SRC_FILENAME)
+
+# Determine the raw filename and conversion type based on source extension
+# CONVERT_TYPE: none, decompress, qcow2
+ifeq ($(suffix $(SRC_FILENAME)),.xz)
+  # Could be .raw.xz or something.xz
+  INNER_NAME := $(basename $(SRC_FILENAME))
+  RAW_FILE := $(IMAGE_BUILD_DIR)/$(INNER_NAME)
+  CONVERT_TYPE := decompress
+else ifeq ($(suffix $(SRC_FILENAME)),.qcow2)
+  RAW_FILE := $(IMAGE_BUILD_DIR)/$(SRC_BASENAME).raw
+  CONVERT_TYPE := qcow2
+else
+  # .raw, .img, or unknown - use downloaded file directly
+  RAW_FILE := $(DOWNLOADED_FILE)
+  CONVERT_TYPE := none
+endif
+
+# Output file names
+IMG_VERSION := $(shell date +%Y%m%d)
+OUTPUT_STUB := $(IMAGE_BUILD_DIR)/$(IMAGE)-$(IMG_VERSION)
+OUTPUT_ZFS := $(OUTPUT_STUB).x86_64.zfs
+OUTPUT_GZ := $(OUTPUT_ZFS).gz
+OUTPUT_MANIFEST := $(OUTPUT_STUB).json
+
+.PHONY: do-build
+do-build: $(OUTPUT_GZ) $(OUTPUT_MANIFEST)
+	@echo ""
+	@echo "Build complete!"
+	@echo "  Image: $(OUTPUT_GZ)"
+	@echo "  Manifest: $(OUTPUT_MANIFEST)"
+
+# Create the build directory
+$(IMAGE_BUILD_DIR):
+	@echo "Creating build directory: $(IMAGE_BUILD_DIR)"
+	mkdir -p $(IMAGE_BUILD_DIR)
+
+# Download the source image
+$(DOWNLOADED_FILE): | $(IMAGE_BUILD_DIR)
+	@echo "Downloading $(SRC_FILENAME)..."
+	@echo "  URL: $(URL)"
+	cd $(IMAGE_BUILD_DIR) && curl -LO "$(URL)"
+ifdef CHECKSUM
+ifneq ($(CHECKSUM),)
+	@echo "Validating checksum..."
+	@cd $(IMAGE_BUILD_DIR) && echo "$(CHECKSUM)  $(SRC_FILENAME)" | sha256sum -c -
+	@echo "Checksum validated."
+endif
+endif
+
+# Only define conversion rules when conversion is actually needed
+ifeq ($(CONVERT_TYPE),decompress)
+$(RAW_FILE): $(DOWNLOADED_FILE)
+	@echo "Decompressing $(SRC_FILENAME)..."
+	cd $(IMAGE_BUILD_DIR) && unxz -k "$(SRC_FILENAME)"
+endif
+
+ifeq ($(CONVERT_TYPE),qcow2)
+$(RAW_FILE): $(DOWNLOADED_FILE)
+	@echo "Converting $(SRC_FILENAME) to raw format..."
+	qemu-img convert -f qcow2 -O raw "$(DOWNLOADED_FILE)" "$(RAW_FILE)"
+endif
+
+# Build the compressed ZFS image
+# For CONVERT_TYPE=none, RAW_FILE=DOWNLOADED_FILE so this depends directly on download
+$(OUTPUT_GZ): $(RAW_FILE)
+	@echo "Building ZFS image..."
+	@# Generate a unique UUID for this build's zvol
+	$(eval BUILD_UUID := $(shell uuid -v 4))
+	$(eval ZVOL_DATASET := zones/$(shell zonename)/data/$(BUILD_UUID))
+	$(eval ZVOL_RAW := /dev/zvol/rdsk/$(ZVOL_DATASET))
+	@echo "Creating zvol: $(ZVOL_DATASET) ($(ZVOL_SIZE)M)"
+	pfexec zfs create -V $(ZVOL_SIZE)m $(ZVOL_DATASET)
+	@# Set up cleanup trap via a subshell
+	@trap_cleanup() { \
+		echo "Cleaning up zvol: $(ZVOL_DATASET)"; \
+		pfexec zfs destroy $(ZVOL_DATASET) 2>/dev/null || true; \
+	}; \
+	trap trap_cleanup EXIT; \
+	echo "Writing raw image to zvol..."; \
+	pfexec dd if="$(RAW_FILE)" of="$(ZVOL_RAW)" bs=1M status=progress; \
+	echo "Exporting ZFS stream..."; \
+	pfexec zfs send $(ZVOL_DATASET) > "$(OUTPUT_ZFS)"; \
+	echo "Compressing image..."; \
+	gzip "$(OUTPUT_ZFS)"; \
+	echo "Cleaning up zvol: $(ZVOL_DATASET)"; \
+	pfexec zfs destroy $(ZVOL_DATASET)
+
+# Generate the manifest
+$(OUTPUT_MANIFEST): $(OUTPUT_GZ)
+	@echo "Generating manifest..."
+	$(eval MANIFEST_UUID := $(shell uuid -v 4))
+	$(eval PUBLISHED_AT := $(shell date -u +%FT%TZ))
+	$(eval SHA1 := $(shell digest -a sha1 $(OUTPUT_GZ)))
+	$(eval SIZE := $(shell stat -c %s $(OUTPUT_GZ)))
+	$(eval OS := $(shell json -f $(IMGCONFIGS) '["$(IMAGE)"].os'))
+	$(eval DESC := $(shell json -f $(IMGCONFIGS) '["$(IMAGE)"].desc'))
+	$(eval HOMEPAGE := $(shell json -f $(IMGCONFIGS) '["$(IMAGE)"].homepage'))
+	sed \
+		-e 's/@UUID@/$(MANIFEST_UUID)/g' \
+		-e 's/@NAME@/$(IMAGE)/g' \
+		-e 's/@VERSION@/$(IMG_VERSION)/g' \
+		-e 's/@PUBLISHED_AT@/$(PUBLISHED_AT)/g' \
+		-e 's/@OS@/$(OS)/g' \
+		-e 's/@SHA1@/$(SHA1)/g' \
+		-e 's/@SIZE@/$(SIZE)/g' \
+		-e 's/@DESCRIPTION@/$(DESC)/g' \
+		-e 's#@HOMEPAGE@#$(HOMEPAGE)#g' \
+		$(MANIFEST_TEMPLATE) > $(OUTPUT_MANIFEST)

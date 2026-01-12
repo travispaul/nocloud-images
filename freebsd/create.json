@@ -1,0 +1,37 @@
+{
+  "alias": "freebsd-nocloud",
+  "hostname": "freebsd-nocloud",
+  "brand": "bhyve",
+  "ram": 2048,
+  "vcpus": 2,
+  "bootrom": "uefi",
+  "cpu_cap": 200,
+  "resolvers": [
+    "1.1.1.1",
+    "8.8.8.8"
+  ],
+  "nics": [
+    {
+      "nic_tag": "admin",
+      "ips": [
+        "172.16.26.32/23"
+      ],
+      "gateways": [
+        "172.16.26.1"
+      ],
+      "model": "virtio"
+    }
+  ],
+  "disks": [
+    {
+      "image_uuid": "6590acfa-c596-4e77-aa5d-dba330b49e20",
+      "boot": true,
+      "model": "virtio",
+      "size": 10240
+    }
+  ],
+  "flexible_disk_size": 10240,
+  "customer_metadata": {
+     "cloud-init:user-data": "#cloud-config\nusers:\n  - name: freebsd\n    ssh_authorized_keys:\n      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMI+EAg62hwbsaEmdNSJbKB2mc+cnTQu63KJwhcAx/sN tpaul@edgecast.io\n"
+  }
+}

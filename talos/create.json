@@ -1,0 +1,34 @@
+{
+  "alias": "talos-nocloud",
+  "hostname": "talos-nocloud",
+  "brand": "bhyve",
+  "ram": 2048,
+  "vcpus": 2,
+  "cpu_cap": 200,
+  "resolvers": [
+    "1.1.1.1",
+    "8.8.8.8"
+  ],
+  "nics": [
+    {
+      "nic_tag": "admin",
+      "ips": [
+        "172.16.26.32/23"
+      ],
+      "gateways": [
+        "172.16.26.1"
+      ],
+      "model": "virtio"
+    }
+  ],
+  "disks": [
+    {
+      "image_uuid": "5ba204e6-9f76-4952-a288-37db7b2182ea",
+      "boot": true,
+      "model": "virtio",
+      "size": 10240
+    }
+  ],
+  "flexible_disk_size": 10240,
+  "customer_metadata": {}
+}
