@@ -7,17 +7,17 @@ Images and manifests are available in Manta:
 - Alpine ([manifest](https://us-central.manta.mnx.io/tpaul/public/nocloud/alpine-20260114.json) / [image](https://us-central.manta.mnx.io/tpaul/public/nocloud/alpine-20260114.x86_64.zfs.gz))
 - FreeBSD ([manifest](https://us-central.manta.mnx.io/tpaul/public/nocloud/freebsd-20260114.json) / [image](https://us-central.manta.mnx.io/tpaul/public/nocloud/freebsd-20260114.x86_64.zfs.gz))
 - Debian ([manifest](https://us-central.manta.mnx.io/tpaul/public/nocloud/debian-13-20260114.json) / [image](https://us-central.manta.mnx.io/tpaul/public/nocloud/debian-13-20260114.x86_64.zfs.gz))
-- Talos ([manifest](https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260114.json) / [image](https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260114.x86_64.zfs.gz))
+- Talos ([manifest](https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260205.json) / [image](https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260205.x86_64.zfs.gz))
 
-Test [PI](https://us-central.manta.mnx.io/tpaul/public/nocloud/platform-20260114T185356Z.tgz) \ [ISO](https://us-central.manta.mnx.io/tpaul/public/nocloud/platform-20260114T185356Z.iso)
+Test [PI](https://us-central.manta.mnx.io/tpaul/public/nocloud/platform-20260209T220841Z.tgz)
 
 ## Talos Example
 
 ```
 $ cd /opt
-$ curl -O https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260114.json
-$ curl -O https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260114.x86_64.zfs.gz
-$ imgadm install -m talos-20260114.json -f talos-20260114.x86_64.zfs.gz
+$ curl -O https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260205.json
+$ curl -O https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260205.x86_64.zfs.gz
+$ imgadm install -m talos-20260205.json -f talos-20260205.x86_64.zfs.gz
 $ cat <<'EOF' | vmadm create
 {
   "alias": "talos-nocloud",
@@ -98,6 +98,72 @@ $ talosctl bootstrap -n  172.16.26.32 -e 172.16.26.32 --talosconfig talosconfig
 
 ![talos-ready](talos-ready.png)
 
+
+### Talos Triton
+
+You'll need the updated [PI](https://us-central.manta.mnx.io/tpaul/public/nocloud/platform-20260209T220841Z.tgz) booted on the target CNs.
+
+```
+# Create Talos VMs (control node and two worker nodes)
+triton inst create -n talos-w1 talos sample-4G
+triton inst create -n talos-w2 talos sample-4G
+triton inst create -w -n talos-ctrl talos sample-4G
+
+# Save control node IP
+export CTRL=$(triton inst ip talos-ctrl)
+
+# Ensure control node has booted
+talosctl get disks --nodes $CTRL --insecure
+
+# Create directory for config files
+mkdir -p talos-test && cd ~/talos-test
+
+# generate config files for cluster
+talosctl gen config test-cluster https://$CTRL:6443 --install-disk /dev/vda
+
+# apply cluster config
+talosctl apply-config --insecure --nodes $CTRL --file controlplane.yaml
+
+# export talos config and set endpoint
+export TALOSCONFIG=talosconfig
+talosctl config endpoint $CTRL
+
+# wait for bootstrap request
+talosctl dashboard --nodes $CTRL
+
+# bootstrap cluster
+talosctl bootstrap -n $CTRL
+
+# wait until Ready: True
+talosctl health --nodes $CTRL
+
+# apply config to worker nodes
+
+export W1=$(triton inst ip talos-w1)
+talosctl apply-config --nodes $W1 --file worker.yaml --insecure
+talosctl dashboard --nodes $W1
+
+export W2=$(triton inst ip talos-w2)
+talosctl apply-config --nodes $W2 --file worker.yaml --insecure
+talosctl dashboard --nodes $W2
+
+# create kubeconfig
+talosctl kubeconfig --nodes $CTRL ~/.kube/config
+
+# check nodes and pods
+kubectl get nodes -o wide
+kubectl get pods -A -o wide
+
+# launch nginx
+kubectl run test --image=nginx --restart=Never
+
+kubectl get pods
+
+kubectl port-forward pod/test 8080:80 &
+
+curl -sS http://127.0.0.1:8080 | head
+
+```
 
 ## FreeBSD Example
 
