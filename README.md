@@ -104,65 +104,43 @@ $ talosctl bootstrap -n  172.16.26.32 -e 172.16.26.32 --talosconfig talosconfig
 You'll need the updated [PI](https://us-central.manta.mnx.io/tpaul/public/nocloud/platform-20260209T220841Z.tgz) booted on the target CNs.
 
 ```
-# Create Talos VMs (control node and two worker nodes)
-triton inst create -n talos-w1 talos sample-4G
-triton inst create -n talos-w2 talos sample-4G
-triton inst create -w -n talos-ctrl talos sample-4G
-
-# Save control node IP
-export CTRL=$(triton inst ip talos-ctrl)
-
-# Ensure control node has booted
-talosctl get disks --nodes $CTRL --insecure
+# Choose a predictable FQDN for the control node endpoint (e.g. created by CNS)
+# Needs to be in the talos config so needs to be known ahead-of-time
+export CTRL=ctrl.svc.travis.ext.corp
 
 # Create directory for config files
-mkdir -p talos-test && cd ~/talos-test
+mkdir -p ~/talos-test && cd ~/talos-test
 
-# generate config files for cluster
-talosctl gen config test-cluster https://$CTRL:6443 --install-disk /dev/vda
+# Generate config files for cluster
+talosctl gen config test-cluster https://$CTRL:6443 --install-disk /dev/vda --additional-sans $CTRL
 
-# apply cluster config
-talosctl apply-config --insecure --nodes $CTRL --file controlplane.yaml
-
-# export talos config and set endpoint
+# Export talos config and set endpoint
 export TALOSCONFIG=talosconfig
 talosctl config endpoint $CTRL
 
-# wait for bootstrap request
-talosctl dashboard --nodes $CTRL
+# Create Talos VMs (control node and two worker nodes) using configs
+triton inst create -t triton.cns.services=k8s,worker -n talos-w1 talos sample-4G -m "cloud-init:user-data=$(cat worker.yaml)"
+triton inst create -t triton.cns.services=k8s,worker -n talos-w2 talos sample-4G -m "cloud-init:user-data=$(cat worker.yaml)"
+triton inst create -w -t triton.cns.services=k8s,ctrl -n talos-ctrl talos sample-4G -m "cloud-init:user-data=$(cat controlplane.yaml)"
 
-# bootstrap cluster
+# bootstrap talos and cluster
 talosctl bootstrap -n $CTRL
 
-# wait until Ready: True
+# Wait for cluster to be ready
 talosctl health --nodes $CTRL
 
-# apply config to worker nodes
-
-export W1=$(triton inst ip talos-w1)
-talosctl apply-config --nodes $W1 --file worker.yaml --insecure
-talosctl dashboard --nodes $W1
-
-export W2=$(triton inst ip talos-w2)
-talosctl apply-config --nodes $W2 --file worker.yaml --insecure
-talosctl dashboard --nodes $W2
-
-# create kubeconfig
+# Generate kube config
 talosctl kubeconfig --nodes $CTRL ~/.kube/config
 
-# check nodes and pods
+# List nodes and pods
 kubectl get nodes -o wide
 kubectl get pods -A -o wide
 
-# launch nginx
+# test launching a pod
 kubectl run test --image=nginx --restart=Never
-
-kubectl get pods
-
+kubectl get pods -o wide
 kubectl port-forward pod/test 8080:80 &
-
 curl -sS http://127.0.0.1:8080 | head
-
 ```
 
 ## FreeBSD Example
