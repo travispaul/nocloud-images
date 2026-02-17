@@ -105,16 +105,22 @@ You'll need the updated [PI](https://us-central.manta.mnx.io/tpaul/public/noclou
 
 ```
 # Choose a predictable FQDN for the control node endpoint (e.g. created by CNS)
-# Needs to be in the talos config so needs to be known ahead-of-time
+# needs to be in the talos config so needs to be known ahead-of-time
 export CTRL=ctrl.svc.travis.ext.corp
 
 # Create directory for config files
 mkdir -p ~/talos-test && cd ~/talos-test
 
-# Generate config files for cluster
-talosctl gen config test-cluster https://$CTRL:6443 --install-disk /dev/vda --additional-sans $CTRL
+# Create patch files for the configs we are about to generate
+# These patch files configure etcd, kublets, and pod traffic to use the fabric network
+export FABRIC=$(triton network get 'My-Fabric-Network' | jq -r .subnet)
+printf 'machine:\n  kubelet:\n    nodeIP:\n      validSubnets:\n        - %s\n' "$FABRIC" > fabric-patch.yaml
+printf 'cluster:\n  etcd:\n    advertisedSubnets:\n      - %s\n' "$FABRIC" > controlplane-patch.yaml 
 
-# Export talos config and set endpoint
+# generate config files for cluster
+talosctl gen config test-cluster https://$CTRL:6443 --install-disk /dev/vda --additional-sans $CTRL --config-patch @fabric-patch.yaml --config-patch-control-plane @controlplane-patch.yaml    
+
+# export talos config and set endpoint
 export TALOSCONFIG=talosconfig
 talosctl config endpoint $CTRL
 
@@ -129,6 +135,9 @@ talosctl bootstrap -n $CTRL
 # Wait for cluster to be ready
 talosctl health --nodes $CTRL
 
+# view dashboard (optional)
+talosctl dashboard --nodes $CTRL
+
 # Generate kube config
 talosctl kubeconfig --nodes $CTRL ~/.kube/config
 
@@ -138,7 +147,7 @@ kubectl get pods -A -o wide
 
 # test launching a pod
 kubectl run test --image=nginx --restart=Never
-kubectl get pods -o wide
+kubectl wait --for=condition=Ready pod/test
 kubectl port-forward pod/test 8080:80 &
 curl -sS http://127.0.0.1:8080 | head
 ```
