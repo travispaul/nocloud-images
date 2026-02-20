@@ -9,7 +9,7 @@ Images and manifests are available in Manta:
 - Debian ([manifest](https://us-central.manta.mnx.io/tpaul/public/nocloud/debian-13-20260114.json) / [image](https://us-central.manta.mnx.io/tpaul/public/nocloud/debian-13-20260114.x86_64.zfs.gz))
 - Talos ([manifest](https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260205.json) / [image](https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260205.x86_64.zfs.gz))
 
-Test [PI](https://us-central.manta.mnx.io/tpaul/public/nocloud/platform-20260209T220841Z.tgz)
+Test [PI](https://us-central.manta.mnx.io/tpaul/public/nocloud/platform-20260220T172824Z.tgz)
 
 ## Talos Example
 
@@ -115,10 +115,10 @@ mkdir -p ~/talos-test && cd ~/talos-test
 # These patch files configure etcd, kublets, and pod traffic to use the fabric network
 export FABRIC=$(triton network get 'My-Fabric-Network' | jq -r .subnet)
 printf 'machine:\n  kubelet:\n    nodeIP:\n      validSubnets:\n        - %s\n' "$FABRIC" > fabric-patch.yaml
-printf 'cluster:\n  etcd:\n    advertisedSubnets:\n      - %s\n' "$FABRIC" > controlplane-patch.yaml 
+printf 'cluster:\n  etcd:\n    advertisedSubnets:\n      - %s\n' "$FABRIC" > controlplane-patch.yaml
 
 # generate config files for cluster
-talosctl gen config test-cluster https://$CTRL:6443 --install-disk /dev/vda --additional-sans $CTRL --config-patch @fabric-patch.yaml --config-patch-control-plane @controlplane-patch.yaml    
+talosctl gen config test-cluster https://$CTRL:6443 --install-disk /dev/vda --additional-sans $CTRL --config-patch @fabric-patch.yaml --config-patch-control-plane @controlplane-patch.yaml
 
 # export talos config and set endpoint
 export TALOSCONFIG=talosconfig
