@@ -27,7 +27,7 @@
       }
     ],
     "ssh_key": true,
-    "min_platform": {"7.0": "20260224T190434Z"}
+    "min_platform": {"7.0": "20260303T183253Z"}
   },
   "users": [
     {

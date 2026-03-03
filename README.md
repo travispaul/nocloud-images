@@ -9,7 +9,7 @@ Images and manifests are available in Manta:
 - Debian ([manifest](https://us-central.manta.mnx.io/tpaul/public/nocloud/debian-13-20260114.json) / [image](https://us-central.manta.mnx.io/tpaul/public/nocloud/debian-13-20260114.x86_64.zfs.gz))
 - Talos ([manifest](https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260205.json) / [image](https://us-central.manta.mnx.io/tpaul/public/nocloud/talos-20260205.x86_64.zfs.gz))
 
-Test [PI](https://us-central.manta.mnx.io/tpaul/public/nocloud/platform-20260224T234313Z.tgz)
+Test [PI](https://us-central.manta.mnx.io/tpaul/public/nocloud/platform-20260303T183253Z.tgz)
 
 ## Talos Example
 
